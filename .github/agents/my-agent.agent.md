@@ -1,12 +1,9 @@
 ---
-# Fill in the fields below to create a basic custom agent for your repository.
-# The Copilot CLI can be used for local testing: https://gh.io/customagents/cli
-# To make this agent available, merge this file into the default repository branch.
-# For format details, see: https://gh.io/customagents/config
-
-name:# My Agent
-description:
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+name: My Agent
+description: Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+model: gpt-5
+tools: all
+---
 
 **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
@@ -58,15 +55,8 @@ Transform tasks into verifiable goals:
 - "Refactor X" → "Ensure tests pass before and after"
 
 For multi-step tasks, state a brief plan:
-```
 1. [Step] → verify: [check]
 2. [Step] → verify: [check]
 3. [Step] → verify: [check]
-```
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
----
-
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
-Describe what your agent does here.
