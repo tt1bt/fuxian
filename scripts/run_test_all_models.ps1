@@ -27,7 +27,8 @@ function Resolve-DatasetFromWeight {
   )
 
   foreach ($ds in $known_datasets) {
-    if ($base_name -like "*_$ds") {
+    $escaped = [regex]::Escape($ds)
+    if ($base_name -match "(^|_)$escaped(_|$)") {
       return $ds
     }
   }

@@ -98,6 +98,23 @@ def _is_valid_split(data, dataset_len, num_classes, query_ratio):
     return True
 
 
+def _has_min_query_and_train_per_class(labels, train_idx, query_idx):
+    """校验每个类别（样本数>=2）是否同时包含 query 与 train。"""
+    labels = np.asarray(labels)
+    query_set = set(np.asarray(query_idx, dtype=np.int64).tolist())
+
+    for cls in np.unique(labels):
+        cls_idx = np.where(labels == cls)[0]
+        cls_total = int(len(cls_idx))
+        if cls_total < 2:
+            continue
+        cls_query = sum((int(i) in query_set) for i in cls_idx)
+        cls_train = cls_total - cls_query
+        if cls_query < 1 or cls_train < 1:
+            return False
+    return True
+
+
 def get_split_indices(labels, seed, query_ratio, split_path):
     """
     获取/生成分层划分索引。
@@ -111,10 +128,10 @@ def get_split_indices(labels, seed, query_ratio, split_path):
         with open(split_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         if _is_valid_split(data, dataset_len, num_classes, query_ratio):
-            return (
-                np.array(data["train"], dtype=np.int64),
-                np.array(data["query"], dtype=np.int64),
-            )
+            train_idx = np.array(data["train"], dtype=np.int64)
+            query_idx = np.array(data["query"], dtype=np.int64)
+            if _has_min_query_and_train_per_class(labels, train_idx, query_idx):
+                return train_idx, query_idx
         print(f"[警告] 划分文件与当前数据不一致，将重新生成: {split_path}")
 
     rng = np.random.RandomState(seed)
@@ -123,7 +140,12 @@ def get_split_indices(labels, seed, query_ratio, split_path):
     for cls in np.unique(labels):
         idx = np.where(labels == cls)[0]
         rng.shuffle(idx)
-        split = int(len(idx) * query_ratio)
+        n = len(idx)
+        if n < 2:
+            split = 0
+        else:
+            split = int(n * query_ratio)
+            split = max(1, min(n - 1, split))
         query_idx.extend(idx[:split].tolist())
         train_idx.extend(idx[split:].tolist())
 
@@ -220,6 +242,9 @@ def main():
         ),
     )
     args = parser.parse_args()
+
+    if not (0.0 < args.query_ratio < 1.0):
+        raise ValueError(f"--query_ratio 必须在 (0, 1) 内，当前为 {args.query_ratio}")
 
     args.root = repo_path(args.root)
     args.split_path = repo_path(args.split_path)

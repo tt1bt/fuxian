@@ -90,6 +90,23 @@ def _is_valid_split(data, dataset_len, num_classes, query_ratio):
     return True
 
 
+def _has_min_query_and_train_per_class(labels, train_idx, query_idx):
+    """校验每个类别（样本数>=2）是否同时包含 query 与 train。"""
+    labels = np.asarray(labels)
+    query_set = set(np.asarray(query_idx, dtype=np.int64).tolist())
+
+    for cls in np.unique(labels):
+        cls_idx = np.where(labels == cls)[0]
+        cls_total = int(len(cls_idx))
+        if cls_total < 2:
+            continue
+        cls_query = sum((int(i) in query_set) for i in cls_idx)
+        cls_train = cls_total - cls_query
+        if cls_query < 1 or cls_train < 1:
+            return False
+    return True
+
+
 def get_split_indices(labels, seed, query_ratio, split_path):
     """获取或创建分层 train/query 划分索引。"""
     labels = np.asarray(labels)
@@ -100,10 +117,10 @@ def get_split_indices(labels, seed, query_ratio, split_path):
         with open(split_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         if _is_valid_split(data, dataset_len, num_classes, query_ratio):
-            return (
-                np.array(data["train"], dtype=np.int64),
-                np.array(data["query"], dtype=np.int64),
-            )
+            train_idx = np.array(data["train"], dtype=np.int64)
+            query_idx = np.array(data["query"], dtype=np.int64)
+            if _has_min_query_and_train_per_class(labels, train_idx, query_idx):
+                return train_idx, query_idx
         print(f"[警告] 划分文件与当前数据不一致，将重新生成: {split_path}")
 
     rng = np.random.RandomState(seed)
@@ -112,7 +129,12 @@ def get_split_indices(labels, seed, query_ratio, split_path):
     for cls in np.unique(labels):
         idx = np.where(labels == cls)[0]
         rng.shuffle(idx)
-        split = int(len(idx) * query_ratio)
+        n = len(idx)
+        if n < 2:
+            split = 0
+        else:
+            split = int(n * query_ratio)
+            split = max(1, min(n - 1, split))
         q = idx[:split]
         t = idx[split:]
         query_idx.extend(q.tolist())
@@ -328,6 +350,10 @@ def save_tsne_csv(codes, labels, out_path, max_samples=2000, seed=42):
 
 def evaluate_once(args, device, imb_factor, hash_bits, weights_path, split_path):
     """执行一次评估配置并输出检索指标。"""
+    # 关键修复: 让同一 IF 下不同哈希位数使用同一随机子集，保证横向可比性。
+    local_seed = args.seed + int(round(float(imb_factor) * 1_000_000))
+    set_seed(local_seed)
+
     weights_path = repo_path(weights_path)
     split_path = repo_path(split_path)
     if not os.path.exists(weights_path):
@@ -466,6 +492,9 @@ def main():
         help="按 IF∈{0.1,0.05,0.01} 与哈希位数∈{16,32,64} 批量评测；缺权重则跳过",
     )  # 论文对照批量评测
     args = parser.parse_args()
+
+    if not (0.0 < args.query_ratio < 1.0):
+        raise ValueError(f"--query_ratio 必须在 (0, 1) 内，当前为 {args.query_ratio}")
 
     args.root = repo_path(args.root)
     args.split_path = repo_path(args.split_path)
